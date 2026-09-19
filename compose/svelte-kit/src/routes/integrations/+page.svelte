@@ -265,7 +265,7 @@
     <div class="settings rounded-2xl h-full p-6 overflow-y-auto">
       <div class="content">
   <header class="head">
-    <div class="head-row">
+    <div class="head-row">                                                                                                       
       <h1><i class="fas fa-plug"></i> {m.nav_integrations()}</h1>
       <div class="search">
         <i class="fas fa-magnifying-glass"></i>

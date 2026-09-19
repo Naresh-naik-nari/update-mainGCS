@@ -63,8 +63,9 @@ The main MAVLink module has been refactored to use the transport abstraction. Ke
 
 ### API Endpoints
 
-**Location:** `src/routes/api/mavlink/connection/`
+**Location:** `src/routes/api/mavlink/`
 
+Connection Management:
 - **GET `/api/mavlink/connection`** — Get current settings and status
 - **POST `/api/mavlink/connection`** — Update settings with optional reconnect
 - **DELETE `/api/mavlink/connection`** — Force reconnection
@@ -72,9 +73,24 @@ The main MAVLink module has been refactored to use the transport abstraction. Ke
 - **POST `/api/mavlink/connection/ports/detect`** — Trigger serial auto-detection
 - **GET `/api/mavlink/connection/status`** — Lightweight status polling
 
-### UI Component
+Quick Connect (for ConnectionModal):
+- **POST `/api/mavlink/list_ports`** — List serial ports with device info
+- **POST `/api/mavlink/connect`** — Quick connect with transport config
 
-**Location:** `src/components/ConnectionSettings.svelte`
+### UI Components
+
+**ConnectionModal** — `src/components/ConnectionModal.svelte`
+
+Quick connection modal for easy access:
+
+- Tabbed interface (Serial, TCP, UDP)
+- Serial port scanning and selection
+- Network connection forms with validation
+- Preset configurations for common setups
+- Theme-aware styling
+- Mobile-responsive design
+
+**ConnectionSettings** — `src/components/ConnectionSettings.svelte`
 
 Comprehensive connection management UI with:
 
@@ -83,6 +99,11 @@ Comprehensive connection management UI with:
 - Serial port auto-detection
 - Real-time connection status
 - Save/reconnect actions
+
+**When to use:**
+- Use `ConnectionModal` for quick connections (nav bar button, first-run)
+- Use `ConnectionSettings` for advanced configuration (settings page)
+- See `CONNECTION_MODAL_INTEGRATION.md` for detailed usage guide
 
 ## Transport Configuration
 

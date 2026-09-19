@@ -1,0 +1,353 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                  SIDAK GCS - OFFLINE MAPS SYSTEM                     ║
+║                         VISUAL GUIDE                                  ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                     SYSTEM ARCHITECTURE                               │
+└──────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────┐
+    │         Sidak GCS Web Interface                 │
+    │  (Leaflet Map - Shows tile layers)              │
+    └──────────────────┬──────────────────────────────┘
+                       │
+                       ├─── ONLINE MODE ───┐
+                       │                    │
+                       ▼                    ▼
+        ┌────────────────────────┐   ┌────────────────────────┐
+        │  Online Tile Servers   │   │  Local Tile Server     │
+        │  - OpenStreetMap       │   │  http://localhost:8080 │
+        │  - Google Maps         │   │                        │
+        │  - Esri Imagery        │   │  ├─ osm/              │
+        └────────────────────────┘   │  ├─ satellite/        │
+                                     │  └─ carto_dark/       │
+                ┌─── OFFLINE MODE ───┘                        │
+                │                                              │
+                ▼                                              │
+        ┌────────────────────────────────────────────────────┐│
+        │         Tile Storage (Filesystem)                   ││
+        │  static/map/tiles/                                  ││
+        │    osm/14/2621/6333.png                            ││
+        │    satellite/16/10485/25334.jpg                    ││
+        └─────────────────────────────────────────────────────┘
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                      WORKFLOW DIAGRAM                                 │
+└──────────────────────────────────────────────────────────────────────┘
+
+STEP 1: DOWNLOAD TILES
+┌─────────────────────────────────────────────────────────────┐
+│ $ npm run tiles:download -- \                              │
+│     --lat 37.7749 \                                        │
+│     --lon -122.4194 \                                      │
+│     --radius 10 \                                          │
+│     --zoom 12-16                                           │
+│                                                             │
+│  ┌──────────────┐      ┌──────────────┐                   │
+│  │ tile-dl.js   │ ───> │ OSM Server   │                   │
+│  │ (downloader) │      │ Esri Server  │                   │
+│  └──────┬───────┘      └──────────────┘                   │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────────────────────────────────┐              │
+│  │  static/map/tiles/                      │              │
+│  │    osm/12/663/1583.png                  │              │
+│  │    osm/13/1326/3167.png                 │              │
+│  │    osm/14/2652/6334.png                 │              │
+│  │    ... (32,000 tiles ~ 1.3GB)           │              │
+│  └─────────────────────────────────────────┘              │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 2: START TILE SERVER
+┌─────────────────────────────────────────────────────────────┐
+│ $ npm run tiles:serve                                       │
+│                                                             │
+│  ┌────────────────────────────────────┐                    │
+│  │  http-server (CORS enabled)        │                    │
+│  │  Port: 8080                        │                    │
+│  │  Path: static/map/tiles            │                    │
+│  │                                    │                    │
+│  │  Serving:                          │                    │
+│  │  └─ /osm/{z}/{x}/{y}.png          │                    │
+│  │  └─ /satellite/{z}/{x}/{y}.jpg    │                    │
+│  └────────────────────────────────────┘                    │
+│                   │                                         │
+│                   ▼                                         │
+│         http://localhost:8080                               │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 3: START GCS IN OFFLINE MODE
+┌─────────────────────────────────────────────────────────────┐
+│ $ npm run dev:offline                                       │
+│   (sets OFFLINE_TILES=true)                                 │
+│                                                             │
+│  ┌────────────────────────────────────┐                    │
+│  │  Sidak GCS                         │                    │
+│  │  http://localhost:5173             │                    │
+│  │                                    │                    │
+│  │  Tile Configuration:               │                    │
+│  │  └─ Light: localhost:8080/osm/     │                    │
+│  │  └─ Dark: localhost:8080/carto_d/  │                    │
+│  │  └─ Sat: localhost:8080/satellite/ │                    │
+│  └────────────────────────────────────┘                    │
+└─────────────────────────────────────────────────────────────┘
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                      TILE COORDINATE SYSTEM                           │
+└──────────────────────────────────────────────────────────────────────┘
+
+Zoom Level 0: Entire World = 1 tile
+         ┌────────────────┐
+         │   256x256px    │
+         │  (whole world) │
+         └────────────────┘
+
+Zoom Level 1: World = 2x2 = 4 tiles
+         ┌────────┬────────┐
+         │  0,0   │  1,0   │
+         ├────────┼────────┤
+         │  0,1   │  1,1   │
+         └────────┴────────┘
+
+Zoom Level 2: World = 4x4 = 16 tiles
+Zoom Level 3: World = 8x8 = 64 tiles
+...
+Zoom Level 14: World = 16,384 x 16,384 = 268 million tiles
+
+URL Format: http://localhost:8080/osm/{z}/{x}/{y}.png
+Example:    http://localhost:8080/osm/14/2621/6333.png
+            └─────┬─────┘ └─┬─┘ └┬─┘ └─┬─┘  └──┬────┘
+                  │        │    │    │       │
+              Source     Zoom  X    Y     Format
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                    STORAGE CALCULATIONS                               │
+└──────────────────────────────────────────────────────────────────────┘
+
+Example: 10km radius around San Francisco (37.7749, -122.4194)
+
+Zoom 12:  4 x 4 tiles   =     16 tiles  (~640 KB)
+Zoom 13:  8 x 8 tiles   =     64 tiles  (~2.5 MB)
+Zoom 14: 16 x 16 tiles  =    256 tiles  (~10 MB)
+Zoom 15: 32 x 32 tiles  =  1,024 tiles  (~40 MB)
+Zoom 16: 64 x 64 tiles  =  4,096 tiles  (~160 MB)
+                         ────────────────────────────
+TOTAL (Zoom 12-16):      5,456 tiles    (~218 MB)
+
+With all 3 sources (osm, carto_dark, satellite):
+    218 MB x 3 = ~654 MB
+
+Actual download for 10km, zoom 12-16:
+    ~32,000 tiles ≈ 1.3 GB (with overlap & satellite imagery)
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                     FILE STRUCTURE                                    │
+└──────────────────────────────────────────────────────────────────────┘
+
+compose/svelte-kit/
+│
+├─ static/map/tiles/          ← Tile storage
+│  ├─ osm/                    ← OpenStreetMap tiles
+│  │  ├─ 10/                  ← Zoom level 10
+│  │  │  ├─ 163/              ← X coordinate
+│  │  │  │  ├─ 395.png        ← Y coordinate
+│  │  │  │  └─ 396.png
+│  │  │  └─ 164/
+│  │  ├─ 11/
+│  │  └─ ...
+│  │
+│  ├─ satellite/              ← Satellite imagery
+│  │  └─ (same structure)
+│  │
+│  └─ carto_dark/             ← Dark mode tiles
+│     └─ (same structure)
+│
+├─ scripts/
+│  ├─ tile-dl.js              ← Tile downloader
+│  ├─ start-tile-server.sh    ← Linux/Mac server script
+│  └─ start-tile-server.ps1   ← Windows server script
+│
+├─ src/lib/
+│  └─ tiles.ts                ← Tile configuration (modified)
+│
+├─ docs/
+│  ├─ OFFLINE_MAPS_GUIDE.md
+│  ├─ OFFLINE_MAPS_QUICKSTART.md
+│  ├─ OFFLINE_MAPS_SUMMARY.md
+│  └─ README_OFFLINE_MAPS.md
+│
+└─ .env.offline.example       ← Config template
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                    DEPLOYMENT SCENARIOS                               │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────┐  ┌─────────────────────────────────┐
+│   SCENARIO 1: FIELD OPS         │  │  SCENARIO 2: DEVELOPMENT        │
+│   (Complete Offline)            │  │  (Hybrid Mode)                  │
+├─────────────────────────────────┤  ├─────────────────────────────────┤
+│                                 │  │                                 │
+│  ┌────────────────────┐         │  │  ┌────────────────────┐         │
+│  │ Raspberry Pi       │         │  │  │ Laptop              │         │
+│  │ ─────────────────  │         │  │  │ ─────────────────  │         │
+│  │ • Pre-downloaded   │         │  │  │ • Partial tiles    │         │
+│  │   tiles (1-10GB)   │         │  │  │   (~500MB)         │         │
+│  │ • Tile server      │         │  │  │ • Falls back to    │         │
+│  │   on boot          │         │  │  │   online           │         │
+│  │ • GCS offline mode │         │  │  │ • Fast local tiles │         │
+│  │ • No internet!     │         │  │  │ • Full coverage    │         │
+│  └────────────────────┘         │  │  └────────────────────┘         │
+│                                 │  │                                 │
+│  Use Case:                      │  │  Use Case:                      │
+│  • Remote operations            │  │  • Testing                      │
+│  • Field surveys                │  │  • Development                  │
+│  • Emergency response           │  │  • Office work                  │
+└─────────────────────────────────┘  └─────────────────────────────────┘
+
+┌─────────────────────────────────┐  ┌─────────────────────────────────┐
+│   SCENARIO 3: DOCKER            │  │  SCENARIO 4: EMBEDDED           │
+│   (Container)                   │  │  (Production Hardware)          │
+├─────────────────────────────────┤  ├─────────────────────────────────┤
+│                                 │  │                                 │
+│  ┌────────────────────┐         │  │  ┌────────────────────┐         │
+│  │ Docker Compose     │         │  │  │ Custom Hardware    │         │
+│  │ ─────────────────  │         │  │  │ ─────────────────  │         │
+│  │ GCS Container      │         │  │  │ • Embedded Linux   │         │
+│  │ Tile Container     │         │  │  │ • systemd service  │         │
+│  │ Volume: ./tiles    │         │  │  │ • USB tile storage │         │
+│  │ Port: 8080         │         │  │  │ • Auto-start       │         │
+│  └────────────────────┘         │  │  └────────────────────┘         │
+│                                 │  │                                 │
+│  Use Case:                      │  │  Use Case:                      │
+│  • Easy deployment              │  │  • Vehicle integration          │
+│  • Portable system              │  │  • Industrial systems           │
+│  • Cloud/edge                   │  │  • Ruggedized units             │
+└─────────────────────────────────┘  └─────────────────────────────────┘
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                      ZOOM LEVEL GUIDE                                 │
+└──────────────────────────────────────────────────────────────────────┘
+
+Zoom  Coverage        Details           Use Case
+────  ───────────────  ────────────────  ─────────────────────────────
+ 0    World            Continents        Never needed
+ 5    Country          States/Regions    Never needed
+ 10   100km radius     Cities            Transit flights
+ 12   25km radius      Districts         General navigation
+ 14   6km radius       Streets           Survey planning
+ 16   1.5km radius     Buildings         Inspection work
+ 18   400m radius      Details           Close inspection
+ 20   100m radius      Ultra-detailed    Special cases only
+
+Recommended Combinations:
+─────────────────────────────────────────────────────────────────────
+ Purpose              Zoom Levels    Storage (10km)
+─────────────────────────────────────────────────────────────────────
+ Overview/Transit     10-14          ~200 MB
+ General Operations   12-16          ~1.3 GB
+ Detailed Survey      14-18          ~20 GB
+ Complete Coverage    10-18          ~22 GB
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                    QUICK COMMAND REFERENCE                            │
+└──────────────────────────────────────────────────────────────────────┘
+
+Download Tiles:
+───────────────
+npm run tiles:download -- --lat 37.7 --lon -122.4 --radius 10 --zoom 12-16
+
+Start Tile Server:
+──────────────────
+npm run tiles:serve
+
+Start GCS Offline:
+──────────────────
+npm run dev:offline
+
+Test Tile Server:
+─────────────────
+Start-Process "http://localhost:8080/osm/10/163/395.png"
+
+Check Tile Count:
+─────────────────
+Get-ChildItem -Path ./static/map/tiles -Recurse -File | Measure-Object
+
+Calculate Storage:
+──────────────────
+(Get-ChildItem -Path ./static/map/tiles -Recurse -File | 
+ Measure-Object -Property Length -Sum).Sum / 1GB
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                         URLS EXPLAINED                                │
+└──────────────────────────────────────────────────────────────────────┘
+
+Tile URL Template:
+──────────────────
+http://localhost:8080/{source}/{z}/{x}/{y}.{format}
+│                 │   │        │   │   │    │
+│                 │   │        │   │   │    └─ File format (png/jpg)
+│                 │   │        │   │   └────── Y coordinate (row)
+│                 │   │        │   └────────── X coordinate (column)
+│                 │   │        └────────────── Zoom level (0-22)
+│                 │   └─────────────────────── Tile source
+│                 └─────────────────────────── Tile server port
+└──────────────────────────────────────────── Protocol & host
+
+Examples:
+─────────
+http://localhost:8080/osm/14/2621/6333.png
+→ OpenStreetMap, zoom 14, tile (2621, 6333)
+
+http://localhost:8080/satellite/16/10485/25334.jpg
+→ Satellite imagery, zoom 16, tile (10485, 25334)
+
+http://localhost:8080/carto_dark/12/655/1584.png
+→ Dark mode, zoom 12, tile (655, 1584)
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                         SUCCESS CHECKLIST                             ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Setup Complete When:
+────────────────────
+ ☐ Tiles downloaded for operational area
+ ☐ Tile server starts without errors
+ ☐ GCS loads in offline mode
+ ☐ Map displays tiles (no gray squares)
+ ☐ Network tab shows localhost:8080 requests
+ ☐ No requests to external tile servers
+ ☐ Zoom in/out works smoothly
+ ☐ Pan around downloaded area works
+ ☐ Outside downloaded area shows blank/gray
+ ☐ Attribution text updated
+
+Production Ready When:
+───────────────────────
+ ☐ Tiles backed up to external drive
+ ☐ Tile server auto-starts on boot
+ ☐ GCS configured for offline by default
+ ☐ Coverage area documented
+ ☐ Storage capacity checked
+ ☐ Tested with network disabled
+ ☐ Field ops team trained
+ ☐ Deployment checklist created
+
+═══════════════════════════════════════════════════════════════════════
+
+For detailed guides, see:
+• README_OFFLINE_MAPS.md       - Main documentation
+• OFFLINE_MAPS_QUICKSTART.md   - 10-minute setup
+• OFFLINE_MAPS_GUIDE.md         - Complete reference
+• OFFLINE_MAPS_SUMMARY.md       - Technical details
+
+═══════════════════════════════════════════════════════════════════════

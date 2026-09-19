@@ -2,7 +2,14 @@
 // MapTiler's rich raster styles (a proper dark map and a labeled hybrid
 // satellite); without one it falls back to keyless sources. Any mode can be
 // overridden with a custom XYZ tile URL from the Integrations settings.
+//
+// OFFLINE MODE: Configure via Integrations UI or use custom tile URLs
+// For offline mode, set custom tile URLs to: http://localhost:8080/osm/{z}/{x}/{y}.png
 
+// Default tile server URL for offline mode (can be customized via config)
+const DEFAULT_TILE_SERVER_URL = 'http://localhost:8080';
+
+// Online tile URLs (internet required)
 const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const CARTO_DARK_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 // Google hybrid: satellite imagery with roads and labels, no key required.
@@ -32,6 +39,26 @@ export function nativeMaxZoom(url: string): number {
   if (url.includes('basemap.nationalmap.gov')) return 16;
   if (url.includes('arcgisonline.com')) return 19;
   return 19;
+}
+
+// Offline tile presets (local server) - for reference/documentation
+// Users can configure these via Integrations UI custom tile URLs
+export function getOfflinePresets(tileServerUrl: string = DEFAULT_TILE_SERVER_URL): Record<'light' | 'dark' | 'satellite', { label: string; url: string }[]> {
+  return {
+    light: [
+      { label: 'OpenStreetMap (Offline)', url: `${tileServerUrl}/osm/{z}/{x}/{y}.png` },
+      { label: 'CARTO Light (Offline)', url: `${tileServerUrl}/carto_light/{z}/{x}/{y}.png` },
+      { label: 'Esri Streets (Offline)', url: `${tileServerUrl}/esri_streets/{z}/{x}/{y}.png` }
+    ],
+    dark: [
+      { label: 'CARTO Dark (Offline)', url: `${tileServerUrl}/carto_dark/{z}/{x}/{y}.png` },
+      { label: 'Esri Dark Gray (Offline)', url: `${tileServerUrl}/esri_dark/{z}/{x}/{y}.png` }
+    ],
+    satellite: [
+      { label: 'Satellite (Offline)', url: `${tileServerUrl}/satellite/{z}/{x}/{y}.png` },
+      { label: 'Esri Imagery (Offline)', url: `${tileServerUrl}/esri_imagery/{z}/{x}/{y}.png` }
+    ]
+  };
 }
 
 // Free, keyless tile sources offered as presets in the Integrations dropdowns.
@@ -116,4 +143,21 @@ export function resolveTiles(config: TileConfig = {}): TileSources {
     osmAttribution: usingMaptilerBase ? MAPTILER_ATTR : key ? CARTO_ATTR : OSM_ATTR,
     satelliteAttribution: usingMaptilerSat ? MAPTILER_ATTR : GOOGLE_ATTR
   };
+}
+
+/**
+ * Check if tile server is available (for hybrid online/offline mode)
+ */
+export async function checkOfflineTileServer(url: string = DEFAULT_TILE_SERVER_URL): Promise<boolean> {
+  try {
+    // Try to fetch a test tile
+    const testUrl = `${url}/osm/10/163/395.png`;
+    const response = await fetch(testUrl, { 
+      method: 'HEAD',
+      signal: AbortSignal.timeout(2000)
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
