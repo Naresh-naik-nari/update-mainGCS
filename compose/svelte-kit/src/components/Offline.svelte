@@ -1,15 +1,17 @@
 <script lang="ts">
   import { m } from '$lib/paraglide/messages';
+  import ConnectionModal from './ConnectionModal.svelte';
 
   let isMinimized = $state(false);
   let reconnecting = $state(false);
+  let showConnectionModal = $state(false);
+
   function toggleMinimize() {
     isMinimized = !isMinimized;
   }
 
-  // Forces the server to drop and redial the vehicle link, the usual cause of
-  // a reconnecting fit, without reloading the app and losing session state.
-  // The offline pill clears itself once heartbeats resume.
+  // Forces the server to drop and redial the vehicle link using the current
+  // saved config (e.g. auto-detect serial).
   async function reconnect() {
     reconnecting = true;
     try {
@@ -19,6 +21,11 @@
     } finally {
       setTimeout(() => (reconnecting = false), 2000);
     }
+  }
+
+  function handleConnected() {
+    // Modal closes itself; the heartbeat poll will flip onlineStore when
+    // telemetry starts arriving.
   }
 </script>
 
@@ -61,9 +68,22 @@
               </p>
           </div>
           <div class="px-4 pb-3 pt-1 flex flex-wrap justify-center gap-2">
-              <button class="reconnect px-3 py-1.5 text-white rounded-lg font-semibold disabled:opacity-60" onclick={reconnect} disabled={reconnecting}>
-                  <i class="fas {reconnecting ? 'fa-circle-notch fa-spin' : 'fa-rotate'} mr-1"></i>
-                  {reconnecting ? m.offline_reconnecting() : m.offline_reconnect()}
+              <!-- Primary: open the connection picker -->
+              <button
+                class="reconnect px-3 py-1.5 text-white rounded-lg font-semibold"
+                onclick={() => showConnectionModal = true}
+              >
+                <i class="fas fa-plug mr-1"></i>
+                Connect
+              </button>
+              <!-- Secondary: retry with current saved config -->
+              <button
+                class="ghost px-3 py-1.5 rounded-lg disabled:opacity-60"
+                onclick={reconnect}
+                disabled={reconnecting}
+              >
+                <i class="fas {reconnecting ? 'fa-circle-notch fa-spin' : 'fa-rotate'} mr-1"></i>
+                {reconnecting ? m.offline_reconnecting() : m.offline_reconnect()}
               </button>
               <button class="ghost px-3 py-1.5 rounded-lg" onclick={() => window.location.reload()}>
                   {m.offline_refresh_window()}
@@ -72,6 +92,12 @@
         {/if}
     </div>
 </div>
+
+<ConnectionModal
+  isOpen={showConnectionModal}
+  onClose={() => showConnectionModal = false}
+  onConnect={handleConnected}
+/>
 
 <style>
   .container {

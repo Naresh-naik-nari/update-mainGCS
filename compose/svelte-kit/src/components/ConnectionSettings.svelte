@@ -98,7 +98,7 @@
 			if (!response.ok) return;
 			const data = await response.json();
 			status = data;
-		} catch (error) {
+		} catch {
 			// Silent fail for status polling
 		}
 	}
@@ -109,7 +109,7 @@
 			if (!response.ok) return;
 			const data = await response.json();
 			availablePorts = data.ports;
-		} catch (error) {
+		} catch {
 			// Silent fail for port list
 		}
 	}

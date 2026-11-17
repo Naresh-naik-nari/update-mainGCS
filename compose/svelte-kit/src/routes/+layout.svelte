@@ -42,6 +42,7 @@
   import { loggedInStore } from '../stores/authStore';
   import { get } from 'svelte/store';
   import Offline from '../components/Offline.svelte';
+  import ConnectionModal from '../components/ConnectionModal.svelte';
   import GuidancePanel from '../components/GuidancePanel.svelte';
   import Map from '../components/Map.svelte';
   import { locales, getLocale, setLocale, type Locale } from '$lib/paraglide/runtime';
@@ -91,6 +92,7 @@
   let battery = $derived($mavBatteryStore);
   let online = $derived($onlineStore);
   let darkMode = $derived($darkModeStore);
+  let showConnectionModal = $state(false);
   const AUTH_PAGES = new Set(['/', '/login', '/register', '/forgot-password', '/reset-password']);
 
   // The theme is a single class on <html>; every --primaryColor/--fontColor
@@ -124,14 +126,19 @@
     const dashboard = document.querySelector('.dashboard');
     if (dashboard) {
       heightOfDashboard = dashboard.clientHeight;
-      if (window.location.pathname !== '/') {
-        if (window.location.pathname !== '/dashboard') heightOfDashboard += 1;
-        const nav = document.querySelector('.desktop-nav') as HTMLElement | null;
-        if (nav) nav.style.opacity = '1';
-        (dashboard as HTMLElement).style.opacity = '1';
-      }
+      if (window.location.pathname !== '/dashboard') heightOfDashboard += 1;
     }
+    // Ensure the nav is always visible on authenticated pages.
+    const nav = document.querySelector('.desktop-nav') as HTMLElement | null;
+    if (nav) nav.style.opacity = '1';
   }
+
+  // Re-run when online state changes so the nav height recalculates after
+  // the Offline overlay appears or disappears (it shifts the layout).
+  $effect(() => {
+    void online;
+    untrack(() => setTimeout(updateDashboardHeight, 50));
+  });
 
   // Re-run after navigation: each page renders its own .dashboard element and
   // the desktop nav is hidden on the public routes.
@@ -463,6 +470,9 @@
           });
           setOnline(true);
         } else {
+          // An empty queue means no new packets since the last poll — normal
+          // during quiet periods. setOnline(false) only trips offline after
+          // OFFLINE_AFTER_MISSES (3) consecutive empty polls.
           setOnline(false);
         }
       } else if (response.status === 401) {
@@ -954,10 +964,18 @@
   }
 
   async function getLogs(text: string) {
-    // truncate old logs to save memory
+    if (!text) return;
+
+    // Truncate old logs to save memory
     logs = logs.slice(-LOG_HISTORY_LIMIT);
 
-    if (!text || logs.includes(text)) return;
+    // Only deduplicate exact same lines within the same batch (e.g. heartbeat
+    // injected by both the stream and the poll in the same tick). Do NOT scan
+    // the full logs array — that blocks repeated telemetry lines (e.g. two
+    // successive ATTITUDE frames with the same values) and causes setOnline
+    // to flip false when the heartbeat poll re-delivers a known line.
+    const trimmed = text.trimEnd();
+    if (logs.length > 0 && logs[logs.length - 1].trimEnd() === trimmed) return;
 
     logs = [...logs, text];
     mavlinkLogStore.set(logs);
@@ -1111,7 +1129,7 @@
   </div>
   <div class="flex w-full h-full z-10">
     <!-- Desktop Navigation -->
-    <nav class="desktop-nav w-min h-full p-4 flex flex-col opacity-0 z-20" style:display={isNavHidden ? 'none' : 'flex'} use:navTooltips>
+    <nav class="desktop-nav w-min h-full p-4 flex flex-col z-20" style:display={isNavHidden ? 'none' : 'flex'} use:navTooltips>
       <div class="shrink-0 mb-5 flex justify-center">
         <button onclick={(e) => { e.preventDefault(); handleNavigation('/'); }}>
           <img src="/logo.png" alt="Logo" class="w-12 h-12 min-w-12 object-contain">
@@ -1165,6 +1183,10 @@
       </div>
       <div class="nav-footer shrink-0 flex flex-col items-center gap-3 pt-4">
         <div class="separator h-[2px] w-[80%] mb-1 rounded-2xl"></div>
+        <button class="nav-button {online ? 'connected' : 'disconnected'}" onclick={() => showConnectionModal = true} aria-label="Connect Vehicle">
+          <i class="nav-icon fas {online ? 'fa-plug' : 'fa-plug-circle-xmark'}"></i>
+          <div class="tooltip text-white">{online ? 'Reconnect' : 'Connect'} Vehicle</div>
+        </button>
         <button class="nav-button" onclick={toggleAudioCallouts}>
           <i class="nav-icon fas {$audioCalloutsStore ? 'fa-volume-up' : 'fa-volume-mute'}"></i>
           <div class="tooltip text-white">{m.nav_audio_callouts()}</div>
@@ -1230,6 +1252,9 @@
           <a href="/alerts" onclick={(e) => { e.preventDefault(); handleNavigation('/alerts'); }} class="nav-button mb-4 {currentPath === '/alerts' ? 'active' : ''}">
             <i class="nav-icon fas fa-bell"></i>&nbsp;&nbsp;{m.nav_alerts()}
           </a>
+          <button onclick={() => showConnectionModal = true} class="nav-button mb-4 {online ? 'connected' : 'disconnected'}" type="button">
+            <i class="nav-icon fas {online ? 'fa-plug' : 'fa-plug-circle-xmark'}"></i>&nbsp;&nbsp;{online ? 'Reconnect' : 'Connect'} Vehicle
+          </button>
           <button onclick={toggleAudioCallouts} class="nav-button mb-4" type="button">
             <i class="nav-icon fas {$audioCalloutsStore ? 'fa-volume-up' : 'fa-volume-mute'}"></i>&nbsp;&nbsp;{$audioCalloutsStore ? m.nav_audio_on() : m.nav_audio_off()}
           </button>
@@ -1273,6 +1298,14 @@
   </div>
 </main>
 
+<ConnectionModal
+  isOpen={showConnectionModal}
+  onClose={() => showConnectionModal = false}
+  onConnect={() => {
+    showConnectionModal = false;
+  }}
+/>
+
 <style>
   .dark-mode-btn {
     z-index: 25;
@@ -1313,9 +1346,12 @@
     border-radius: var(--radius-shell) 0 0 var(--radius-shell);
     margin-left: 2em;
     max-height: 90vh;
-    height: var(--heightOfDashboard);
-    transition: height 0s;
-    transition: opacity 0.25s;
+    min-height: min(var(--heightOfDashboard, 400px), 90vh);
+    height: min(var(--heightOfDashboard, 400px), 90vh);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: height 0.1s, opacity 0.25s;
   }
 
   .mobile-nav {
@@ -1333,6 +1369,27 @@
     background-color: transparent;
     border-radius: var(--radius-control);
     color: #8d8d8e;
+    flex-shrink: 0;
+  }
+
+  .nav-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(from var(--fontColor) r g b / 0.15) transparent;
+  }
+
+  :global(.nav-scroll::-webkit-scrollbar) {
+    width: 3px;
+  }
+  :global(.nav-scroll::-webkit-scrollbar-thumb) {
+    background: rgb(from var(--fontColor) r g b / 0.2);
+    border-radius: 2px;
   }
 
   .nav-button:hover {
@@ -1345,6 +1402,19 @@
 
   .nav-button.active {
     background-color: var(--tertiaryColor);
+  }
+
+  .nav-button.connected {
+    background-color: rgba(34, 197, 94, 0.18);
+  }
+  .nav-button.connected .nav-icon {
+    color: #22c55e;
+  }
+  .nav-button.disconnected {
+    background-color: rgba(239, 68, 68, 0.12);
+  }
+  .nav-button.disconnected .nav-icon {
+    color: #ef4444;
   }
 
   .nav-icon {

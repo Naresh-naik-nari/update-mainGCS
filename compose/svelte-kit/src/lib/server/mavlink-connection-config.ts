@@ -4,7 +4,7 @@
  * Handles persistence and retrieval of connection settings from the database
  */
 
-import { getSetting, setSetting, getSettings } from './settings';
+import { setSetting, getSettings } from './settings';
 import type { TransportConfig, TransportType, UDPMode } from './mavlink-transport';
 
 const CONFIG_PREFIX = 'mavlink.connection.';
@@ -67,7 +67,12 @@ export async function loadConnectionSettings(): Promise<ConnectionSettings> {
         
         serialPath: stored[`${CONFIG_PREFIX}serialPath`] || defaults.serialPath,
         serialBaud: Number(stored[`${CONFIG_PREFIX}serialBaud`] || defaults.serialBaud),
-        serialAutoDetect: stored[`${CONFIG_PREFIX}serialAutoDetect`] === 'true' || defaults.serialAutoDetect,
+        // A saved "false" must be honored: `('false' === 'true') || defaults`
+        // evaluated to true whenever the default was true, so the operator's
+        // auto-detect toggle never stuck.
+        serialAutoDetect: stored[`${CONFIG_PREFIX}serialAutoDetect`] !== undefined
+            ? stored[`${CONFIG_PREFIX}serialAutoDetect`] === 'true'
+            : defaults.serialAutoDetect,
         
         tcpHost: stored[`${CONFIG_PREFIX}tcpHost`] || defaults.tcpHost,
         tcpPort: Number(stored[`${CONFIG_PREFIX}tcpPort`] || defaults.tcpPort),

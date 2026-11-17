@@ -313,7 +313,6 @@ iframe {
 }
 
 .dashboard {
-  opacity: 0;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
   background-color: rgb(from var(--secondaryColor) r g b / 0.85) !important;
 }

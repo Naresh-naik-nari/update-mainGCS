@@ -22,10 +22,10 @@
  *   --format      Output format (png|jpg) default: png
  */
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const http = require('http');
+import fs from 'node:fs';
+import path from 'node:path';
+import https from 'node:https';
+import http from 'node:http';
 
 // Parse command line arguments
 function parseArgs() {

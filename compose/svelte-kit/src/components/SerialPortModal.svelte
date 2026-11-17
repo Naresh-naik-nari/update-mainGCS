@@ -1,11 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    darkModeStore,
-    primaryColorStore,
-    secondaryColorStore,
-    tertiaryColorStore
-  } from '../stores/customizationStore';
 
   interface SerialPortInfo {
     path: string;
@@ -24,12 +18,6 @@
   let ports: SerialPortInfo[] = $state([]);
   let loading = $state(true);
   let selectedPortPath: string | null = $state(null);
-
-  let darkMode = $derived($darkModeStore);
-  let primaryColor = $derived($primaryColorStore);
-  let secondaryColor = $derived($secondaryColorStore);
-  let tertiaryColor = $derived($tertiaryColorStore);
-  let fontColor = $derived(darkMode ? '#ffffff' : '#000000');
 
   async function loadPorts() {
     loading = true;
@@ -94,7 +82,6 @@
 >
   <div
     class="modal-content"
-    style="--primaryColor: {primaryColor}; --secondaryColor: {secondaryColor}; --tertiaryColor: {tertiaryColor}; --fontColor: {fontColor};"
     role="dialog"
     aria-modal="true"
     aria-labelledby="modal-title"

@@ -91,6 +91,7 @@ interface MavlinkState {
     // Set while a mission upload is in flight; the reader routes each
     // MISSION_REQUEST_INT and MISSION_ACK here so the handshake can proceed.
     missionUpload: { onEvent: (event: UploadEvent) => void } | null;
+    _onData?: (data: Buffer) => void;
     // Auto-detection state
     detectedPort: { path: string; baud: number } | null;
     detecting: boolean;
@@ -310,18 +311,16 @@ async function sendMsg(
     transport: MAVLinkTransport,
     msg: Parameters<typeof send>[1]
 ): Promise<void> {
-    const buffer = Buffer.alloc(1024);
-    
     if (!state.signingKey) {
         // Send unsigned
-        const length = await send(transport as any, msg);
+        await send(transport as unknown as Parameters<typeof send>[0], msg);
         return;
     }
     
     // Send signed
     const ts = nextSigningTimestamp(Date.now(), state.lastSignAt);
     state.lastSignAt = ts;
-    await sendSigned(transport as any, msg, state.signingKey, state.signingLinkId, undefined, undefined, ts);
+    await sendSigned(transport as unknown as Parameters<typeof sendSigned>[0], msg, state.signingKey, state.signingLinkId, undefined, undefined, ts);
 }
 
 function noteSignatureReject(reason: string): void {
@@ -486,11 +485,14 @@ function setupTransportListeners(): void {
 function setupPacketReader(): void {
     if (!state.transport) return;
     
-    // Transport implements readable stream interface
-    const readable = state.transport as any;
-    state.reader = readable
-        .pipe(new MavLinkPacketSplitter())
-        .pipe(new MavLinkPacketParser());
+	// Transport emits 'data' events; feed them through the MAVLink transforms.
+	const splitter = new MavLinkPacketSplitter();
+	const parser = new MavLinkPacketParser();
+	splitter.pipe(parser);
+	state.reader = parser;
+	const onData = (data: Buffer) => splitter.write(data);
+	state.transport?.on('data', onData);
+	state._onData = onData;
 
     state.reader?.on('data', (packet) => {
         // With signing on, a signed message must verify against the key, and a
@@ -1006,7 +1008,9 @@ export function getTransportStatus(): {
 export async function getAvailableSerialPorts(): Promise<Array<{ 
     path: string; 
     manufacturer?: string; 
-    serialNumber?: string 
+    serialNumber?: string;
+    vendorId?: string;
+    productId?: string;
 }>> {
     return await listSerialPorts();
 }

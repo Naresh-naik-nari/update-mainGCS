@@ -16,10 +16,13 @@ const ASSETS = [...build, ...files];
 const SHELL = '/';
 
 self.addEventListener('install', (event) => {
+	self.skipWaiting();
 	async function addFilesToCache() {
 		const cache = await caches.open(CACHE);
-		await cache.addAll(ASSETS);
-		await cache.add(SHELL);
+		for (const asset of ASSETS) {
+			try { await cache.add(asset); } catch { /* asset unavailable */ }
+		}
+		try { await cache.add(SHELL); } catch { /* shell unavailable */ }
 	}
 
 	event.waitUntil(addFilesToCache());
@@ -42,11 +45,15 @@ self.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') return;
 
 	const url = new URL(event.request.url);
-
+	
 	// Live data stays live: telemetry, overlays, and video signaling never
 	// come from or go into the cache. Cross-origin traffic (map tiles,
 	// terrain) keeps its own HTTP caching.
 	if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+	
+	// Let Vite's dev server handle its own module/font/asset requests
+	// directly; intercepting them breaks HMR and dynamic imports.
+	if (url.pathname.startsWith('/@') || url.pathname.includes('/@fs/') || url.pathname.startsWith('/node_modules/')) return;
 
 	async function respond() {
 		const cache = await caches.open(CACHE);

@@ -1,14 +1,55 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { notify } from '../../lib/overlays';
   import { resolveTiles, TILE_PRESETS, MAPTILER_PRESETS, maptilerTileUrl } from '../../lib/tiles';
   import Select from '../../components/Select.svelte';
   import { mavVideoStreamStore } from '../../stores/mavlinkStore';
   import { safetyLimitsStore, lowBandwidthStore } from '../../stores/safetyStore';
   import { m } from '$lib/paraglide/messages';
+  import ConnectionModal from '../../components/ConnectionModal.svelte';
   let loading = $state(true);
   let saving = $state(false);
   let filter = $state('');
+
+  // ── Vehicle Connection ──────────────────────────────────────────────────────
+  let showConnectionModal = $state(false);
+  let connectionStatus = $state<{
+    state: 'disconnected' | 'connecting' | 'connected' | 'error';
+    type: string | null;
+    online: boolean;
+    lastPacketAt: number;
+  } | null>(null);
+  let statusInterval: ReturnType<typeof setInterval> | null = null;
+
+  async function loadConnectionStatus() {
+    try {
+      const res = await fetch('/api/mavlink/connection/status');
+      if (res.ok) connectionStatus = await res.json();
+    } catch { /* silent */ }
+  }
+
+  async function disconnectVehicle() {
+    try {
+      await fetch('/api/mavlink/connection', { method: 'DELETE' });
+      await loadConnectionStatus();
+      notify({ title: 'Disconnected', content: 'Vehicle link reset.', duration: 3000 });
+    } catch { /* silent */ }
+  }
+
+  function statusColor(s: string | undefined) {
+    if (s === 'connected')  return '#22c55e';
+    if (s === 'connecting') return '#f59e0b';
+    if (s === 'error')      return '#ef4444';
+    return '#6b7280';
+  }
+
+  function statusLabel(s: string | undefined) {
+    if (s === 'connected')  return 'Connected';
+    if (s === 'connecting') return 'Connecting…';
+    if (s === 'error')      return 'Error';
+    return 'Disconnected';
+  }
+  // ───────────────────────────────────────────────────────────────────────────
 
   let email = $state('');
   let smtp = $state({ host: '', port: '587', secure: false, user: '', from: '', pass: '' });
@@ -77,6 +118,7 @@
   // The page search hides panels whose title and field words miss the query,
   // so a long settings page narrows to the one being looked for.
   const PANEL_KEYWORDS = {
+    connection: 'connection vehicle serial usb com port connect disconnect baud rate tcp udp mavlink link',
     operator: 'operator email password reset alert recipient account',
     smtp: 'email smtp mail server host port username password from tls alerts',
     airspace: 'airspace openaip altitude angel api key faa zones no-fly',
@@ -126,6 +168,8 @@
   }
 
   onMount(async () => {
+    loadConnectionStatus();
+    statusInterval = setInterval(loadConnectionStatus, 2000);
     try {
       const res = await fetch('/api/integrations');
       const data = await res.json();
@@ -231,6 +275,8 @@
     }
   }
 
+  onDestroy(() => { if (statusInterval) clearInterval(statusInterval); });
+
   async function disableSigning() {
     saving = true;
     try {
@@ -279,11 +325,77 @@
     <div class="panel"><p class="muted">{m.common_loading()}</p></div>
   {:else}
     <form onsubmit={(e) => { e.preventDefault(); save(); }}>
-      {#if filter.trim() && !panelVisible('operator') && !panelVisible('smtp') && !panelVisible('airspace') && !panelVisible('tiles') && !panelVisible('camera') && !panelVisible('ai') && !panelVisible('mavlink') && !panelVisible('failsafe') && !panelVisible('safety') && !panelVisible('lowbandwidth')}
+      {#if filter.trim() && !panelVisible('connection') && !panelVisible('operator') && !panelVisible('smtp') && !panelVisible('airspace') && !panelVisible('tiles') && !panelVisible('camera') && !panelVisible('ai') && !panelVisible('mavlink') && !panelVisible('failsafe') && !panelVisible('safety') && !panelVisible('lowbandwidth')}
         <div class="panel"><p class="muted">{m.int_no_match({ filter })}</p></div>
       {/if}
       <div class="settings-grid">
       <div class="col-main">
+      {#if panelVisible('connection')}
+      <section class="panel connection-panel">
+        <div class="panel-head">
+          <span class="icon-chip"><i class="fas fa-satellite-dish"></i></span>
+          <div>
+            <h2>Vehicle Connection</h2>
+            <p class="muted">Connect to your flight controller via USB serial, TCP, or UDP.</p>
+          </div>
+        </div>
+
+        <!-- Live status bar -->
+        <div class="conn-status-row">
+          <div class="conn-dot-wrap">
+            <span class="conn-dot" style="background:{statusColor(connectionStatus?.state)}"></span>
+            <span class="conn-state-label">{statusLabel(connectionStatus?.state)}</span>
+            {#if connectionStatus?.type}
+              <span class="conn-type-badge">{connectionStatus.type.toUpperCase()}</span>
+            {/if}
+          </div>
+          {#if connectionStatus?.online && connectionStatus.lastPacketAt}
+            <span class="conn-last-pkt">
+              Last packet {Math.floor((Date.now() - connectionStatus.lastPacketAt) / 1000)}s ago
+            </span>
+          {/if}
+        </div>
+
+        <!-- Action buttons -->
+        <div class="conn-actions">
+          {#if connectionStatus?.state === 'connected' || connectionStatus?.state === 'connecting'}
+            <button
+              type="button"
+              class="conn-btn conn-btn-disconnect"
+              onclick={disconnectVehicle}
+            >
+              <i class="fas fa-plug-circle-xmark"></i>
+              Disconnect
+            </button>
+            <button
+              type="button"
+              class="conn-btn conn-btn-change"
+              onclick={() => showConnectionModal = true}
+            >
+              <i class="fas fa-arrows-rotate"></i>
+              Change Connection
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="conn-btn conn-btn-connect"
+              onclick={() => showConnectionModal = true}
+            >
+              <i class="fas fa-plug"></i>
+              Connect to Vehicle
+            </button>
+          {/if}
+        </div>
+
+        <!-- Quick-tip -->
+        <p class="conn-tip">
+          <i class="fas fa-lightbulb"></i>
+          Plug in your flight controller via USB, then click <strong>Connect to Vehicle</strong>
+          and select the COM port from the list.
+        </p>
+      </section>
+      {/if}
+
       {#if panelVisible('smtp')}
       <section class="panel">
         <div class="panel-head">
@@ -1006,4 +1118,123 @@
       justify-content: center;
     }
   }
+
+  /* ── Vehicle Connection panel ─────────────────────────────────── */
+  .connection-panel .icon-chip {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.28);
+    color: #3b82f6;
+  }
+
+  .conn-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 0.875rem;
+    border-radius: var(--radius-control);
+    background: rgb(from var(--tertiaryColor) r g b / 0.4);
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .conn-dot-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .conn-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.45; }
+  }
+
+  .conn-state-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .conn-type-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+    letter-spacing: 0.04em;
+  }
+
+  .conn-last-pkt {
+    font-size: 0.78rem;
+    opacity: 0.6;
+  }
+
+  .conn-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.875rem;
+  }
+
+  .conn-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.6rem 1.25rem;
+    border: none;
+    border-radius: var(--radius-control);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s, opacity 0.15s;
+  }
+
+  .conn-btn-connect {
+    background: #3b82f6;
+    color: #fff;
+  }
+  .conn-btn-connect:hover { filter: brightness(1.12); }
+
+  .conn-btn-change {
+    background: rgb(from var(--tertiaryColor) r g b / 0.7);
+    color: var(--fontColor);
+    border: 1px solid rgb(from var(--fontColor) r g b / 0.12);
+  }
+  .conn-btn-change:hover { opacity: 0.8; }
+
+  .conn-btn-disconnect {
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+  }
+  .conn-btn-disconnect:hover { background: rgba(239, 68, 68, 0.2); }
+
+  .conn-tip {
+    font-size: 0.8rem;
+    opacity: 0.6;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    line-height: 1.4;
+  }
+  .conn-tip i { margin-top: 0.1rem; color: #f5c518; flex-shrink: 0; }
 </style>
+
+<ConnectionModal
+  isOpen={showConnectionModal}
+  onClose={() => showConnectionModal = false}
+  onConnect={() => {
+    showConnectionModal = false;
+    loadConnectionStatus();
+    notify({ title: 'Connecting…', content: 'MAVLink connection initiated.', duration: 3000 });
+  }}
+/>

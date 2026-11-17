@@ -421,6 +421,7 @@
     if (onWindowResize) window.removeEventListener('resize', onWindowResize);
     if (settleTimer) clearInterval(settleTimer);
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    leafletMap?.remove();
   });
 
   function updateZoom(delta: number) {
@@ -529,6 +530,16 @@
     const restored3D = mapType.toLowerCase() === '3d';
     let threedmap = document.getElementById('threedmap')!;
     if (threedmap) threedmap.style.display = restored3D ? 'block' : 'none';
+
+    // Leaflet tags containers it has already initialized. A hot reload or a
+    // remount that skipped teardown can leave that tag behind, which would
+    // make L.map(id) throw "Map container is already initialized".
+    const container = document.getElementById(id) as (HTMLElement & { _leaflet_id?: number }) | null;
+    if (container?._leaflet_id != null) {
+      leafletMap?.remove();
+      delete container._leaflet_id;
+    }
+
     leafletMap = L.map(id);
     centerInWindow(mavLocation, zoom);
     if (restored3D) {

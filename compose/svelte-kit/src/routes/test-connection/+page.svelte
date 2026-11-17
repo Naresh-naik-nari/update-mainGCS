@@ -1,10 +1,27 @@
 <script lang="ts">
   import ConnectionModal from '../../components/ConnectionModal.svelte';
   import { onMount } from 'svelte';
-  
+
+  interface ConnectionStatus {
+    state: string;
+    type?: string;
+    online: boolean;
+    lastPacketAt: number;
+    alive: boolean;
+  }
+
+  interface ConnectionConfig {
+    type: 'serial' | 'tcp' | 'udp';
+    port?: string;
+    baudRate?: number;
+    host?: string;
+    portNumber?: number;
+    bindPort?: number;
+  }
+
   let showConnectionModal = $state(false);
-  let connectionStatus = $state<any>(null);
-  let lastConfig = $state<any>(null);
+  let connectionStatus = $state<ConnectionStatus | null>(null);
+  let lastConfig = $state<ConnectionConfig | null>(null);
   let statusInterval: ReturnType<typeof setInterval> | null = null;
   
   onMount(() => {
@@ -27,7 +44,7 @@
     }
   }
   
-  function handleConnect(config: any) {
+  function handleConnect(config: ConnectionConfig) {
     console.log('Connected with config:', config);
     lastConfig = config;
     loadConnectionStatus();
@@ -119,7 +136,7 @@
       <div class="buttons">
         <button 
           class="connect-btn primary" 
-          on:click={() => showConnectionModal = true}
+          onclick={() => showConnectionModal = true}
         >
           <i class="fas fa-plug"></i>
           {connectionStatus?.state === 'connected' ? 'Reconnect' : 'Connect'}
@@ -127,7 +144,7 @@
         
         <button 
           class="connect-btn secondary" 
-          on:click={loadConnectionStatus}
+          onclick={loadConnectionStatus}
         >
           <i class="fas fa-sync-alt"></i>
           Refresh Status

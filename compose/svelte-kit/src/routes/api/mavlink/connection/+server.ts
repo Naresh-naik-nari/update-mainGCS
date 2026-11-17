@@ -9,8 +9,6 @@ import {
     getConnectionSettings,
     updateConnectionSettings,
     getTransportStatus,
-    getAvailableSerialPorts,
-    triggerSerialDetection,
     forceReconnect
 } from '$lib/server/mavlink';
 import type { ConnectionSettings } from '$lib/server/mavlink-connection-config';

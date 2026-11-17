@@ -15,7 +15,6 @@ import {
     setAltitudeGlobal,
     setGlobalOrigin,
     newLogs,
-    logs,
     latestHeartbeat,
     forceReconnect
 } from '$lib/server/mavlink';
@@ -41,23 +40,19 @@ export const POST: RequestHandler = async (event): Promise<Response> => {
                 if (!connected) initializePort();
                 else await requestStatus();
 
-                if (logs.length > 0) {
-                    const logsToSend = newLogs.slice();
-                    newLogs.length = 0; // Clear newLogs
-                    // High-rate telemetry can evict the 1 Hz vehicle heartbeat
-                    // from the ring between polls; the newest one always rides
-                    // along so mode, state, and model stores never go stale.
-                    const heartbeat = latestHeartbeat();
-                    if (heartbeat && !logsToSend.some((entry) => entry.startsWith('HEARTBEAT('))) {
-                        logsToSend.unshift(heartbeat);
-                    }
-                    return new Response(JSON.stringify(logsToSend), { status: 200, headers: {
-                        'Content-Type': 'application/json',
-                        'isProduction': `${process.env.NODE_ENV === 'production'}`,
-                    }});
+                const logsToSend = newLogs.slice();
+                newLogs.length = 0; // Clear newLogs
+                // High-rate telemetry can evict the 1 Hz vehicle heartbeat
+                // from the ring between polls; the newest one always rides
+                // along so mode, state, and model stores never go stale.
+                const heartbeat = latestHeartbeat();
+                if (heartbeat && !logsToSend.some((entry) => entry.startsWith('HEARTBEAT('))) {
+                    logsToSend.unshift(heartbeat);
                 }
-
-                return new Response('No logs available', { status: 503 });
+                return new Response(JSON.stringify(logsToSend), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                });
             } catch (err) {
                 console.error(err);
                 return new Response(`Error: ${(err as Error).message}`, { status: 500 });

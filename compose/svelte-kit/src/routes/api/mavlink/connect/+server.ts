@@ -11,6 +11,7 @@ import type { ConnectionSettings } from '$lib/server/mavlink-connection-config';
 interface ConnectionConfig {
     type: 'serial' | 'tcp' | 'udp';
     port?: string;
+    baudRate?: number;
     host?: string;
     portNumber?: number;
     bindPort?: number;
@@ -53,7 +54,7 @@ export const POST: RequestHandler = async ({ request }) => {
                     transportType: 'serial',
                     serialPath: config.port,
                     serialAutoDetect: false,
-                    serialBaud: 115200 // Default baud rate
+                    serialBaud: config.baudRate ?? 115200
                 };
                 break;
                 

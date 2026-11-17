@@ -491,16 +491,19 @@
             );
         }
 
-        // Add satellite overlay
+        // Add satellite overlay — Esri World Imagery sends CORS headers
+        // (Google's tile servers don't, which blocks MapLibre's fetch-based
+        // tile loader in the browser).
         m.addLayer({
             'id': 'satellite',
             'type': 'raster',
             'source': {
                 'type': 'raster',
                 'tiles': [
-                    'https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                 ],
-                'tileSize': 256
+                'tileSize': 256,
+                'attribution': 'Imagery &copy; Esri'
             },
             'paint': {
                 'raster-opacity': 0.5
@@ -534,7 +537,7 @@
             'filter': ['>', ['get', 'ceilingM'], 0],
             'paint': {
                 'fill-extrusion-color': featureColorExpr,
-                'fill-extrusion-height': ['get', 'ceilingM'],
+                'fill-extrusion-height': ['coalesce', ['get', 'ceilingM'], 0],
                 'fill-extrusion-opacity': 0.22
             }
         });
@@ -579,7 +582,7 @@
             'filter': ['>', ['get', 'ceilingM'], 0],
             'paint': {
                 'fill-extrusion-color': AIRSPACE_RESTRICTED_COLOR,
-                'fill-extrusion-height': ['get', 'ceilingM'],
+                'fill-extrusion-height': ['coalesce', ['get', 'ceilingM'], 0],
                 'fill-extrusion-opacity': 0.18
             }
         });

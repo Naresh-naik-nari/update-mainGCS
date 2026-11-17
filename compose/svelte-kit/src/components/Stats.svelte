@@ -266,15 +266,27 @@
     systemState = $mavStateStore;
     mavMode = $mavModeStore;
     batteryStatus = $mavBatteryStore;
-    altitude = $mavAltitudeStore || 0;
-    speed = $mavSpeedStore || 0;
+    altitude = $mavAltitudeStore ?? 0;
+    speed = $mavSpeedStore ?? 0;
   });
   let missionPlanTitle = $derived($missionPlanTitleStore);
   let mavLocation = $derived($mavLocationStore);
-  let missionProgress = $derived(getMissionProgress($missionIndexStore, $missionCountStore, $mavLocationStore as L.LatLng));
   let missionLoaded = $derived($missionPlanTitleStore !== '');
-  let eta = $derived(calculateETA(missionProgress));
-  let remainingDistance = $derived(calculateRemainingDistance($missionIndexStore, $mavLocationStore, $markersStore));
+
+  // missionProgress, eta, and remainingDistance must be $state (not $derived)
+  // because getMissionProgress mutates progressSamples as a side-effect. Using
+  // $derived for a function with side-effects causes the value to be recalculated
+  // repeatedly inside a reactive context, which is what causes the blinking.
+  let missionProgress = $state(0);
+  let eta = $state('00:00:00');
+  let remainingDistance = $state(0);
+
+  $effect(() => {
+    const p = getMissionProgress($missionIndexStore, $missionCountStore, $mavLocationStore as L.LatLng);
+    missionProgress = p;
+    eta = calculateETA(p);
+    remainingDistance = calculateRemainingDistance($missionIndexStore, $mavLocationStore, $markersStore);
+  });
 
   function clearLoadedPlan() {
     showModal({

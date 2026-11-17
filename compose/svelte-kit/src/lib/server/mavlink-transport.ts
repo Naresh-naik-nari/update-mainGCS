@@ -63,7 +63,11 @@ export interface MAVLinkTransport extends EventEmitter {
     
     connect(): Promise<void>;
     disconnect(): Promise<void>;
-    write(data: Buffer): Promise<void>;
+    // node-mavlink's send()/sendSigned() call stream.write(buffer, callback) and
+    // only resolve once that callback fires. Accept and invoke it here so those
+    // promises settle; callers that await write() directly still work because a
+    // Promise is returned as well.
+    write(data: Buffer, callback?: (error?: Error | null) => void): Promise<void>;
     
     // Required EventEmitter override
     on<K extends keyof TransportEvents>(event: K, listener: TransportEvents[K]): this;
@@ -165,15 +169,22 @@ export class SerialTransport extends EventEmitter implements MAVLinkTransport {
         });
     }
 
-    async write(data: Buffer): Promise<void> {
+    async write(data: Buffer, callback?: (error?: Error | null) => void): Promise<void> {
         if (!this.port || !this.port.isOpen) {
-            throw new Error('Serial port not connected');
+            const err = new Error('Serial port not connected');
+            callback?.(err);
+            throw err;
         }
 
         return new Promise((resolve, reject) => {
             this.port!.write(data, (error) => {
-                if (error) reject(error);
-                else resolve();
+                if (error) {
+                    callback?.(error);
+                    reject(error);
+                } else {
+                    callback?.();
+                    resolve();
+                }
             });
         });
     }
@@ -262,15 +273,22 @@ export class TCPTransport extends EventEmitter implements MAVLinkTransport {
         this.setState('disconnected');
     }
 
-    async write(data: Buffer): Promise<void> {
+    async write(data: Buffer, callback?: (error?: Error | null) => void): Promise<void> {
         if (!this.socket || this.socket.destroyed) {
-            throw new Error('TCP socket not connected');
+            const err = new Error('TCP socket not connected');
+            callback?.(err);
+            throw err;
         }
 
         return new Promise((resolve, reject) => {
             this.socket!.write(data, (error) => {
-                if (error) reject(error);
-                else resolve();
+                if (error) {
+                    callback?.(error);
+                    reject(error);
+                } else {
+                    callback?.();
+                    resolve();
+                }
             });
         });
     }
@@ -383,14 +401,20 @@ export class UDPTransport extends EventEmitter implements MAVLinkTransport {
         });
     }
 
-    async write(data: Buffer): Promise<void> {
+    async write(data: Buffer, callback?: (error?: Error | null) => void): Promise<void> {
         if (!this.socket) {
-            throw new Error('UDP socket not connected');
+            const err = new Error('UDP socket not connected');
+            callback?.(err);
+            throw err;
         }
 
-        // In server mode, we need a remote address from received messages
+        // In server mode, wait for the first incoming message to know where to reply.
+        // Drop outbound packets until a remote client is known — throwing here
+        // crashes the Node process when requestParameters fires on startup. Still
+        // acknowledge the write so node-mavlink's send() promise does not hang.
         if (this.config.mode === 'server' && (!this.remoteAddress || !this.remotePort)) {
-            throw new Error('No remote client to send to (no messages received yet)');
+            callback?.();
+            return; // No remote client yet; packet dropped gracefully.
         }
 
         const targetHost = this.remoteAddress!;
@@ -398,8 +422,13 @@ export class UDPTransport extends EventEmitter implements MAVLinkTransport {
 
         return new Promise((resolve, reject) => {
             this.socket!.send(data, 0, data.length, targetPort, targetHost, (error) => {
-                if (error) reject(error);
-                else resolve();
+                if (error) {
+                    callback?.(error);
+                    reject(error);
+                } else {
+                    callback?.();
+                    resolve();
+                }
             });
         });
     }
@@ -417,19 +446,27 @@ export function createTransport(config: TransportConfig): MAVLinkTransport {
         case 'udp':
             return new UDPTransport(config);
         default:
-            throw new Error(`Unknown transport type: ${(config as any).type}`);
+            throw new Error(`Unknown transport type: ${(config as TransportConfig).type}`);
     }
 }
 
 /**
  * Utility: List available serial ports
  */
-export async function listSerialPorts(): Promise<Array<{ path: string; manufacturer?: string; serialNumber?: string }>> {
+export async function listSerialPorts(): Promise<Array<{
+    path: string;
+    manufacturer?: string;
+    serialNumber?: string;
+    vendorId?: string;
+    productId?: string;
+}>> {
     const ports = await SerialPort.list();
     return ports.map(p => ({
         path: p.path,
         manufacturer: p.manufacturer,
-        serialNumber: p.serialNumber
+        serialNumber: p.serialNumber,
+        vendorId: p.vendorId,
+        productId: p.productId
     }));
 }
 
@@ -486,6 +523,16 @@ function serialCandidates(): string[] {
     
     for (const p of commonPaths) {
         if (existsSync(p)) add(p);
+    }
+
+    // Windows COM ports — SerialPort.list() already enumerates these, so we
+    // only need to add them here when calling serialCandidates() directly.
+    // On Windows, existsSync doesn't reliably check COM ports, so we include
+    // common ones and let the probe attempt settle it.
+    if (process.platform === 'win32') {
+        for (let i = 1; i <= 16; i++) {
+            paths.push(`COM${i}`);
+        }
     }
     
     return paths;
