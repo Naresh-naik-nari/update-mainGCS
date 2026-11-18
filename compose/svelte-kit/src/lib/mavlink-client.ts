@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
-import { mavModelStore, mavLocationStore, mavAltitudeAmslStore, mavlinkParamStore } from '../stores/mavlinkStore';
-import { strategyFor, isPX4, isPlane, MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, type FlightMode } from './flight-modes';
+import { mavModelStore, mavTypeStore, mavLocationStore, mavAltitudeAmslStore, mavlinkParamStore } from '../stores/mavlinkStore';
+import { strategyFor, isPX4, isPlane, MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, getAvailableModeNumbers, type FlightMode } from './flight-modes';
 import { notify } from './overlays';
 import { m } from '$lib/paraglide/messages';
 
@@ -84,6 +84,14 @@ export async function repositionRelative(
 export async function setFlightMode(mode: FlightMode): Promise<boolean> {
   const [baseMode, customMode, customSubMode] = strategyFor().setModeParams(mode);
   return sendMavlinkCommand('DO_SET_MODE', [baseMode, customMode, customSubMode], { cmdLong: true });
+}
+
+// Sets the flight mode by its raw display name (e.g. "STABILIZE", "AUTO.MISSION").
+// Used by the mode dropdown which works with mode name strings.
+export async function setFlightModeByName(name: string): Promise<boolean> {
+  const entry = getAvailableModeNumbers(get(mavModelStore), get(mavTypeStore)).find((e) => e.name === name);
+  if (!entry) return false;
+  return sendMavlinkCommand('DO_SET_MODE', [MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, entry.customMode, entry.customSubMode], { cmdLong: true });
 }
 
 export async function armDisarm(arm: boolean): Promise<boolean> {

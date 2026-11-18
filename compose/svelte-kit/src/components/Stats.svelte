@@ -25,8 +25,9 @@
   import { m } from '$lib/paraglide/messages';
 
   import { showModal, notify } from '../lib/overlays';
-  import { sendMavlinkCommand, setFlightMode } from '../lib/mavlink-client';
-  import { isAutoLabel, isPX4 } from '../lib/flight-modes';
+  import { sendMavlinkCommand, setFlightMode, setFlightModeByName } from '../lib/mavlink-client';
+  import { isAutoLabel, isPX4, getAvailableModes } from '../lib/flight-modes';
+  import { onlineStore } from '../stores/mavlinkStore';
   import { startMissionWithConfirm } from '../lib/start-mission';
   import { takeoffWithConfirm, landWithConfirm } from '../lib/takeoff-land';
   import { missionPlanActionsStore } from '../stores/missionPlanStore';
@@ -269,6 +270,40 @@
     altitude = $mavAltitudeStore ?? 0;
     speed = $mavSpeedStore ?? 0;
   });
+
+  // Recompute available modes whenever the vehicle model or type changes.
+  let availableModes = $derived(getAvailableModes($mavModelStore, $mavTypeStore));
+  let isOnline = $derived($onlineStore);
+  let modeChanging = $state(false);
+
+  // Modes that could be dangerous to enter without explicit confirmation.
+  const CONFIRM_MODES = new Set(['RTL', 'LAND', 'AUTO', 'AUTO.MISSION', 'AUTO.LAND', 'AUTO.RTL', 'QLAND', 'QRTL']);
+
+  async function onModeChange(e: Event) {
+    const select = e.target as HTMLSelectElement;
+    const newMode = select.value;
+    // Reset select back to current mode while we confirm / execute.
+    select.value = mavMode;
+    if (newMode === mavMode) return;
+
+    async function applyMode() {
+      modeChanging = true;
+      const ok = await setFlightModeByName(newMode);
+      modeChanging = false;
+      if (!ok) notify({ title: 'Mode change failed', content: `Could not set mode to ${newMode}.`, type: 'error' });
+    }
+
+    if (CONFIRM_MODES.has(newMode)) {
+      showModal({
+        title: 'Change Flight Mode',
+        content: `Switch to <strong>${newMode}</strong>? This will immediately affect the vehicle.`,
+        confirmation: true,
+        onConfirm: applyMode
+      });
+    } else {
+      await applyMode();
+    }
+  }
   let missionPlanTitle = $derived($missionPlanTitleStore);
   let mavLocation = $derived($mavLocationStore);
   let missionLoaded = $derived($missionPlanTitleStore !== '');
@@ -334,7 +369,27 @@
       <div>{m.stats_speed({ speed })}</div>
       <div>{m.stats_altitude({ altitude })}</div>
       <div class="battery-status {batteryStatus === null ? 'red' : ''} {batteryStatus !== null && batteryStatus < 20 ? 'red' : batteryStatus !== null && batteryStatus < 50 ? 'yellow' : 'green'}">{m.stats_battery({ percent: batteryStatus !== null ? batteryStatus : '--' })}</div>
-      <div>{m.stats_mode()} <span class="text-orange-400">{mavMode}</span></div>
+      <div class="mode-select-wrapper">
+        <label class="mode-label">{m.stats_mode()}</label>
+        <select
+          class="mode-dropdown"
+          value={mavMode}
+          onchange={onModeChange}
+          disabled={!isOnline || modeChanging}
+          title="Change flight mode"
+          aria-label="Flight mode"
+        >
+          {#if !availableModes.includes(mavMode)}
+            <option value={mavMode}>{mavMode}</option>
+          {/if}
+          {#each availableModes as mode}
+            <option value={mode} selected={mode === mavMode}>{mode}</option>
+          {/each}
+        </select>
+        {#if modeChanging}
+          <i class="fas fa-spinner fa-spin mode-spinner"></i>
+        {/if}
+      </div>
     </div>
     <hr class="my-3" />
       <div class="w-full mb-2">{m.stats_loaded_plan()}
@@ -536,5 +591,48 @@
     background-color: #b5bcc5;
     filter: brightness(0.7);
     cursor: not-allowed;
+  }
+
+  .mode-select-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+
+  .mode-label {
+    white-space: nowrap;
+  }
+
+  .mode-dropdown {
+    background-color: var(--tertiaryColor);
+    color: #fb923c; /* orange-400 to match the old span */
+    border: 1px solid color-mix(in srgb, var(--tertiaryColor) 60%, transparent);
+    border-radius: 0.4rem;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.2s, opacity 0.2s;
+    max-width: 10rem;
+  }
+
+  .mode-dropdown:hover:not(:disabled) {
+    border-color: #fb923c;
+  }
+
+  .mode-dropdown:focus {
+    outline: 2px solid #fb923c;
+    outline-offset: 1px;
+  }
+
+  .mode-dropdown:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .mode-spinner {
+    color: #fb923c;
+    font-size: 0.75rem;
   }
 </style>

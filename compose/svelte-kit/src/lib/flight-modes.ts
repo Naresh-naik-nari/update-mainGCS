@@ -143,6 +143,40 @@ const px4Strategy: AutopilotStrategy = {
   supportsLocalSetpoint: false
 };
 
+// Returns the full list of mode names the connected vehicle supports, so the
+// UI can offer a complete mode-change dropdown without hard-coding each stack.
+export function getAvailableModes(
+  model: string = get(mavModelStore),
+  type: string = get(mavTypeStore)
+): string[] {
+  return getAvailableModeNumbers(model, type).map((e) => e.name);
+}
+
+// Returns mode entries with the DO_SET_MODE params needed to engage each one.
+export function getAvailableModeNumbers(
+  model: string = get(mavModelStore),
+  type: string = get(mavTypeStore)
+): { name: string; customMode: number; customSubMode: number }[] {
+  if (isPX4(model)) {
+    const main = Object.entries(PX4_MAIN_NAMES).map(([k, v]) => ({
+      name: v, customMode: parseInt(k), customSubMode: 0
+    }));
+    const sub = Object.entries(PX4_AUTO_SUB_NAMES).map(([k, v]) => ({
+      name: v, customMode: PX4_MAIN.AUTO, customSubMode: parseInt(k)
+    }));
+    return [...main, ...sub];
+  }
+  const cls = arduClassFor(type);
+  const names =
+    cls === 'plane' ? PLANE_MODE_NAMES :
+    cls === 'rover' ? ROVER_MODE_NAMES :
+    cls === 'sub'   ? SUB_MODE_NAMES   :
+    COPTER_MODE_NAMES;
+  return Object.entries(names).map(([k, v]) => ({
+    name: v, customMode: parseInt(k), customSubMode: 0
+  }));
+}
+
 // Ground and water vehicles fly nothing; airspace-related chrome keys off this.
 export function isAirVehicle(type: string = get(mavTypeStore)): boolean {
   return !!type && !/rover|boat|submarine/i.test(type);

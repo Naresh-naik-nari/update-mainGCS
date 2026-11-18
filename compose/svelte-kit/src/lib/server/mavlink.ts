@@ -531,9 +531,10 @@ function setupPacketReader(): void {
             // The vehicle heartbeat arrives at 1 Hz while attitude and position
             // stream far faster, so it can rotate out of the capped ring between
             // client polls; the newest one is kept aside so every poll sees it.
-            // Type 6 is MAV_TYPE_GCS: a bridge such as MAVProxy beats too, and
-            // its heartbeat must never shadow the vehicle's.
-            if (clazz.MSG_NAME === 'HEARTBEAT' && (sanitizedData as { type?: number }).type !== 6) {
+            // Non-vehicle senders on the bus (GCS=6, ADSB=27, ONBOARD_CONTROLLER=18)
+            // must never shadow the vehicle's heartbeat.
+            const NON_VEHICLE_TYPES = new Set([6, 18, 27]);
+            if (clazz.MSG_NAME === 'HEARTBEAT' && !NON_VEHICLE_TYPES.has((sanitizedData as { type?: number }).type ?? -1)) {
                 state.latestHeartbeat = logEntry;
                 const hb = sanitizedData as { type: number; autopilot: number; baseMode: number };
                 state.snapshot.typeName = minimal.MavType[hb.type] ?? '';

@@ -230,6 +230,18 @@
     }
   }
 
+  function resetTelemetryStores() {
+    mavStateStore.set('Unknown');
+    mavModeStore.set('Unknown');
+    mavArmedStateStore.set(false);
+    mavModelStore.set('UNKNOWN');
+    mavTypeStore.set('Unknown');
+    mavBatteryStore.set(null);
+    mavSatelliteStore.set({ total: 0, hdop: 999.0 });
+    mavSpeedStore.set(0);
+    mavAltitudeStore.set(0);
+  }
+
   function setOnline(value: boolean) {
     if (value) {
       consecutiveMisses = 0;
@@ -237,7 +249,10 @@
       return;
     }
     consecutiveMisses += 1;
-    if (consecutiveMisses >= OFFLINE_AFTER_MISSES && online) onlineStore.set(false);
+    if (consecutiveMisses >= OFFLINE_AFTER_MISSES && online) {
+      onlineStore.set(false);
+      resetTelemetryStores();
+    }
   }
 
   function handleTelemetryEvent(ev: TelemetryEvent) {
@@ -664,7 +679,13 @@
 
     HEARTBEAT: (text: string) => {
       const type = extractValue(text, 'type');
-      if (type) mavTypeStore.set(toProperCase(MavType[parseInt(type)]));
+      // Ignore heartbeats from non-vehicle senders: GCS (6), ADSB receiver (27),
+      // onboard controller (18). These are infrastructure components that share
+      // the MAVLink bus but must not overwrite the flight controller's state.
+      const typeNum = parseInt(type);
+      if (typeNum === MavType.GCS || typeNum === MavType.ADSB || typeNum === MavType.ONBOARD_CONTROLLER) return;
+
+      if (type) mavTypeStore.set(toProperCase(MavType[typeNum]));
 
       const model = extractValue(text, 'autopilot');
       if (model) mavModelStore.set(MavAutopilot[parseInt(model)]);
